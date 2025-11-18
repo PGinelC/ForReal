@@ -23,36 +23,24 @@ def read_root():
     return {"Hello": "From FastAPI"}
 
 
-@app.post("/push-test")
-async def push_test_message():
-
-    await manager.send_message(
-        action="server_push",
-        data={"message": "This is a test push from the server!"}
-    )
-    return {"status": "success", "message": "Push notification sent to all clients."}
-
-
+# Expects the JSON to have an action and a data fields
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    await manager.connect(websocket)
+    id = await manager.connect(websocket)
     try:
         while True:
-            data = await websocket.receive_text()
+            data = await manager.listen()
             
             try:
                 payload = json.loads(data)
                 action = payload.get("action")
                 data = payload.get("data")
                 
-                # (NEW) Route incoming messages based on their action
                 if action == "echo":
-                    # Send an acknowledgement back to the *same* client
-                    response = {
-                        "action": "acknowledgement",
-                        "data": f"Python acknowledges your message: {data}"
-                    }
-                    await websocket.send_text(json.dumps(response))
+                    await manager.send_message(
+                        action="acknowledgement",
+                        data=f"Python acknowledges your message: {data}",
+                        websocket=None)
                 
                 elif action == "broadcast_all":
                     # Broadcast this message to *all* clients
@@ -62,12 +50,18 @@ async def websocket_endpoint(websocket: WebSocket):
                     )
                 
                 else:
-                    response = {"action": "error", "data": "Unknown action"}
-                    await websocket.send_text(json.dumps(response))
+                    await manager.send_message(
+                        action="error",
+                        data=f"Unknown action",
+                        websocket=None
+                    )
                     
             except json.JSONDecodeError:
-                response = {"action": "error", "data": "Invalid JSON"}
-                await websocket.send_text(json.dumps(response))
+                await manager.send_message(
+                        action="error",
+                        data=f"Invalid JSON",
+                        websocket=None
+                    )
 
     except WebSocketDisconnect:
         manager.disconnect(websocket)
